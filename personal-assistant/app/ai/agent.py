@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 def _clean_response_text(text: str) -> str:
     if not text:
         return ""
-    cleaned = re.sub(r"<function=[^>]+>.*?</function>", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r"<function=[^>]*>.*?(?:</function>|$)", "", text, flags=re.DOTALL)
     cleaned = re.sub(r" +", " ", cleaned).strip()
     return cleaned
 

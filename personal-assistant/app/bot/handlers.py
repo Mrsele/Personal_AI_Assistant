@@ -87,36 +87,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check if user is currently editing an email draft
-    editing_action_id = context.user_data.pop("editing_action_id", None)
+    editing_action_id = context.user_data.get("editing_action_id")
     if editing_action_id:
-        action = await confirmations.get_pending_action(editing_action_id, user.id)
-        if action and action.action_type == "send_email":
-            payload = action.payload
-            payload["body"] = user_text
+        clean_check = user_text.lower().strip()
+        cancel_words = {"cancel", "stop", "nevermind", "exit", "no"}
+        query_prefixes = ["search", "find", "give me", "show me", "show", "what", "how", "create", "remind", "save", "delete"]
+        if clean_check in cancel_words or any(clean_check.startswith(w) for w in query_prefixes):
+            context.user_data.pop("editing_action_id", None)
+        else:
+            context.user_data.pop("editing_action_id", None)
+            action = await confirmations.get_pending_action(editing_action_id, user.id)
+            if action and action.action_type == "send_email":
+                payload = action.payload
+                payload["body"] = user_text
 
-            try:
-                draft = await gmail_svc.create_draft(
-                    user.id,
-                    to=payload["to"],
-                    subject=payload["subject"],
-                    body=user_text,
-                    reply_to_id=payload.get("reply_to_id"),
+                try:
+                    draft = await gmail_svc.create_draft(
+                        user.id,
+                        to=payload["to"],
+                        subject=payload["subject"],
+                        body=user_text,
+                        reply_to_id=payload.get("reply_to_id"),
+                    )
+                    payload["draft_id"] = draft["draft_id"]
+                except Exception as e:
+                    logger.warning(f"Could not update Gmail draft directly: {e}")
+
+                await confirmations.update_pending_action_payload(action.id, user.id, payload)
+
+                text = (
+                    f"✍️ *Updated Email Draft Preview*\n\n"
+                    f"👤 *To*: {payload['to']}\n"
+                    f"📌 *Subject*: {payload['subject']}\n\n"
+                    f"_{user_text}_"
                 )
-                payload["draft_id"] = draft["draft_id"]
-            except Exception as e:
-                logger.warning(f"Could not update Gmail draft directly: {e}")
-
-            await confirmations.update_pending_action_payload(action.id, user.id, payload)
-
-            text = (
-                f"✍️ *Updated Email Draft Preview*\n\n"
-                f"👤 *To*: {payload['to']}\n"
-                f"📌 *Subject*: {payload['subject']}\n\n"
-                f"_{user_text}_"
-            )
-            keyboard = keyboards.email_draft_keyboard(action.id)
-            await _reply(update, text, keyboard)
-            return
+                keyboard = keyboards.email_draft_keyboard(action.id)
+                await _reply(update, text, keyboard)
+                return
 
     # Check if user typed "send", "send it", "send now", "confirm", "yes send" when an active pending action exists
     send_keywords = {"send", "send it", "send now", "send email", "send this email", "confirm", "yes send", "send please", "send this", "send it please", "send now please"}

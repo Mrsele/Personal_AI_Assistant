@@ -7,7 +7,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.integrations import gmail, calendar as gcal
+from app.integrations import gmail, calendar as gcal, web_search
 from app.services import reminders, ideas, confirmations
 from app.database.models import User
 
@@ -16,6 +16,22 @@ logger = logging.getLogger(__name__)
 # ── Tool schemas for OpenAI ────────────────────────────────────────────────────
 
 TOOL_DEFINITIONS = [
+    # Web Search
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Search the public web for news, websites, car sellers, contact emails, prices, articles, or general information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Search query for news, car sellers, topics, etc."},
+                    "max_results": {"type": "integer", "default": 5},
+                },
+                "required": ["query"],
+            },
+        },
+    },
     # Gmail
     {
         "type": "function",
@@ -257,6 +273,11 @@ async def dispatch_tool(name: str, args: dict, user: User) -> ToolResult:
     uid = user.id
     try:
         match name:
+            # ── Web Search ──
+            case "search_web":
+                data = await web_search.search_web(args["query"], args.get("max_results", 5))
+                return ToolResult(data)
+
             # ── Gmail ──
             case "search_emails":
                 data = await gmail.search_emails(uid, args["query"], args.get("max_results", 10))
