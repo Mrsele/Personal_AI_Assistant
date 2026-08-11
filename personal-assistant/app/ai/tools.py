@@ -63,6 +63,17 @@ TOOL_DEFINITIONS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_email_drafts",
+            "description": "List all pending email drafts that are ready to send or edit.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
     # Calendar
     {
         "type": "function",
@@ -265,6 +276,10 @@ async def dispatch_tool(name: str, args: dict, user: User) -> ToolResult:
                     uid, "send_email", draft
                 )
                 return ToolResult(draft, pending_action_id=action.id, action_type="email_draft")
+
+            case "list_email_drafts":
+                actions = await confirmations.get_pending_actions_by_type(uid, "send_email")
+                return ToolResult([{"action_id": a.id, "to": a.payload.get("to"), "subject": a.payload.get("subject"), "body": a.payload.get("body")} for a in actions])
 
             # ── Calendar ──
             case "get_calendar_events":

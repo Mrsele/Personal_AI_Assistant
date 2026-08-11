@@ -103,6 +103,18 @@ async def send_draft(user_id: int, draft_id: str) -> bool:
     return True
 
 
+async def delete_draft(user_id: int, draft_id: str) -> bool:
+    creds = await get_credentials(user_id)
+    if not creds:
+        raise PermissionError("Google account not connected.")
+    service = _gmail_service(creds)
+    try:
+        service.users().drafts().delete(userId="me", id=draft_id).execute()
+    except Exception as e:
+        logger.debug(f"Could not delete Gmail draft {draft_id}: {e}")
+    return True
+
+
 async def get_recent_emails(user_id: int, max_results: int = 5) -> list[dict]:
     return await search_emails(user_id, "in:inbox is:unread", max_results)
 

@@ -108,3 +108,18 @@ async def get_latest_pending_action(user_id: int) -> Optional[PendingAction]:
             .limit(1)
         )
         return result.scalar_one_or_none()
+
+
+async def get_pending_actions_by_type(user_id: int, action_type: str = "send_email") -> list[PendingAction]:
+    """Get active pending actions of a specific type for a user."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(PendingAction)
+            .where(
+                PendingAction.user_id == user_id,
+                PendingAction.action_type == action_type,
+                PendingAction.expires_at > datetime.utcnow(),
+            )
+            .order_by(PendingAction.created_at.desc())
+        )
+        return result.scalars().all()

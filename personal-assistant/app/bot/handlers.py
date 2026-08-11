@@ -172,6 +172,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN,
             )
 
+        elif data == "menu:drafts":
+            actions = await confirmations.get_pending_actions_by_type(user.id, "send_email")
+            if not actions:
+                text = "📝 *Email Drafts*\n\nNo pending email drafts. Ask me to draft an email anytime!"
+                keyboard = keyboards.back_to_main_keyboard()
+            else:
+                lines = ["📝 *Pending Email Drafts*\n"]
+                for i, act in enumerate(actions, 1):
+                    p = act.payload or {}
+                    lines.append(f"{i}. *To*: {p.get('to')}\n   *Subject*: {p.get('subject')}\n   _{p.get('body', '')[:120]}_")
+                text = "\n\n".join(lines)
+                keyboard = keyboards.drafts_list_keyboard(actions)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
         elif data == "menu:reminders":
             items = await list_reminders(user.id)
             text = messages.reminder_list(items)
@@ -439,12 +453,29 @@ async def _execute_confirmed_action(target, user, action_id: int):
 
 # ── App builder ────────────────────────────────────────────────────────────────
 
+async def drafts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await _get_user(update)
+    actions = await confirmations.get_pending_actions_by_type(user.id, "send_email")
+    if not actions:
+        text = "📝 *Email Drafts*\n\nNo pending email drafts. Ask me to draft an email anytime!"
+        keyboard = keyboards.back_to_main_keyboard()
+    else:
+        lines = ["📝 *Pending Email Drafts*\n"]
+        for i, act in enumerate(actions, 1):
+            p = act.payload or {}
+            lines.append(f"{i}. *To*: {p.get('to')}\n   *Subject*: {p.get('subject')}\n   _{p.get('body', '')[:120]}_")
+        text = "\n\n".join(lines)
+        keyboard = keyboards.drafts_list_keyboard(actions)
+    await _reply(update, text, keyboard)
+
+
 def build_application(token: str) -> Application:
     app = Application.builder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("menu", menu_command))
+    app.add_handler(CommandHandler("drafts", drafts_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 

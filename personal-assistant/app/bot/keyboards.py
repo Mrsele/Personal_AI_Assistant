@@ -6,17 +6,35 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     buttons = [
         [
             InlineKeyboardButton("📥 Inbox", callback_data="menu:inbox"),
+            InlineKeyboardButton("📝 Drafts", callback_data="menu:drafts"),
+        ],
+        [
             InlineKeyboardButton("⏰ Reminders", callback_data="menu:reminders"),
-        ],
-        [
             InlineKeyboardButton("📅 Calendar", callback_data="menu:calendar"),
-            InlineKeyboardButton("💡 My Ideas", callback_data="menu:ideas"),
         ],
         [
+            InlineKeyboardButton("💡 My Ideas", callback_data="menu:ideas"),
             InlineKeyboardButton("☀️ Daily Briefing", callback_data="menu:briefing"),
+        ],
+        [
             InlineKeyboardButton("⚙️ Settings", callback_data="menu:settings"),
         ],
     ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def drafts_list_keyboard(draft_actions: list) -> InlineKeyboardMarkup:
+    """Inline keyboard for viewing/editing/sending/deleting queued drafts."""
+    buttons = []
+    for action in draft_actions:
+        payload = action.payload or {}
+        label = (payload.get("to") or "draft")[:15]
+        buttons.append([
+            InlineKeyboardButton(f"📤 Send ({label})", callback_data=f"send_email:{action.id}"),
+            InlineKeyboardButton("✏️ Edit", callback_data=f"edit_draft:{action.id}"),
+            InlineKeyboardButton("🗑 Remove", callback_data=f"cancel:{action.id}"),
+        ])
+    buttons.append([InlineKeyboardButton("« Main Menu", callback_data="menu:main")])
     return InlineKeyboardMarkup(buttons)
 
 
