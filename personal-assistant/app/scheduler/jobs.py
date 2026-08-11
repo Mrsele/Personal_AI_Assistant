@@ -116,18 +116,72 @@ _notified_emails = set()
 _notified_events = set()
 
 
+async def _analyze_and_auto_draft(user, email: dict) -> dict:
+    """Analyze incoming email with LLM, summarize, and generate auto reply draft."""
+    try:
+        from app.ai.agent import client
+        from app.config import settings
+        import json
+        import re
+
+        sender = email.get("from", "")
+        subject = email.get("subject", "")
+        snippet = email.get("snippet", "") or email.get("body", "")[:500]
+
+        prompt = f"""You are an AI assistant analyzing an incoming email for {user.name or 'the user'}.
+
+Email Details:
+From: {sender}
+Subject: {subject}
+Content Snippet: {snippet}
+
+Task:
+1. Provide a 1-sentence summary of the email.
+2. Assess priority (High, Medium, Low).
+3. Determine if this email requires or benefits from a reply (true/false).
+4. If true, write a polite, concise, professional reply draft body.
+
+Return ONLY a JSON object in this format:
+{{
+    "summary": "...",
+    "priority": "High",
+    "requires_reply": true,
+    "suggested_reply": "..."
+}}"""
+
+        response = await client.chat.completions.create(
+            model=settings.openai_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+        )
+        content = response.choices[0].message.content or ""
+        content = re.sub(r"```json|```", "", content).strip()
+        return json.loads(content)
+    except Exception as e:
+        logger.debug(f"Email analysis error: {e}")
+        return {
+            "summary": email.get("snippet", ""),
+            "priority": "Medium",
+            "requires_reply": False,
+            "suggested_reply": "",
+        }
+
+
 async def check_and_notify_google_updates():
     """Poll connected Google accounts for new unread emails and upcoming calendar events."""
     if not _bot_app:
         return
     try:
+        import re
         from app.services.users import get_all_connected_users
-        from app.integrations.gmail import search_emails
+        from app.integrations.gmail import search_emails, get_email, create_draft
         from app.integrations.calendar import get_events
+        from app.services import confirmations
+        from app.bot import keyboards
 
         users = await get_all_connected_users("google")
         for user in users:
-            # 1. Check unread emails
+            # 1. Check unread emails with AI analysis & auto-drafting
             try:
                 emails = await search_emails(user.id, "in:inbox is:unread", max_results=5)
                 for email in emails:
@@ -137,23 +191,71 @@ async def check_and_notify_google_updates():
                         if len(_notified_emails) > 1000:
                             _notified_emails.pop()
 
-                        text = (
-                            f"📩 *New Email Received*\n\n"
-                            f"From: {email.get('from', 'Unknown')}\n"
-                            f"Subject: *{email.get('subject', '(no subject)')}*\n\n"
-                            f"_{email.get('snippet', '')}_"
-                        )
-                        try:
-                            await _bot_app.bot.send_message(
-                                chat_id=user.telegram_id,
-                                text=text,
-                                parse_mode="Markdown",
+                        # Get full detail for deep AI analysis
+                        full_email = await get_email(user.id, email_id)
+                        analysis = await _analyze_and_auto_draft(user, full_email)
+
+                        sender = full_email.get("from", "Unknown")
+                        subject = full_email.get("subject", "(no subject)")
+                        summary = analysis.get("summary", full_email.get("snippet", ""))
+                        priority = analysis.get("priority", "Medium")
+
+                        if analysis.get("requires_reply") and analysis.get("suggested_reply"):
+                            # Extract email address
+                            match = re.search(r'<([^>]+)>', sender)
+                            to_addr = match.group(1) if match else sender
+
+                            # Create draft automatically in Gmail
+                            draft = await create_draft(
+                                user.id,
+                                to=to_addr,
+                                subject=f"Re: {subject}",
+                                body=analysis["suggested_reply"],
+                                reply_to_id=email_id,
                             )
-                        except Exception:
-                            await _bot_app.bot.send_message(
-                                chat_id=user.telegram_id,
-                                text=f"📩 New Email from {email.get('from')}: {email.get('subject')}",
+                            action = await confirmations.create_pending_action(user.id, "send_email", draft)
+
+                            text = (
+                                f"📩 *New Email Analyzed*\n\n"
+                                f"👤 *From*: {sender}\n"
+                                f"📌 *Subject*: {subject}\n"
+                                f"⚡️ *Priority*: {priority}\n"
+                                f"💡 *AI Summary*: {summary}\n\n"
+                                f"✍️ *Auto-Drafted Reply Preview*:\n"
+                                f"_{analysis['suggested_reply']}_"
                             )
+                            keyboard = keyboards.email_draft_keyboard(action.id)
+                            try:
+                                await _bot_app.bot.send_message(
+                                    chat_id=user.telegram_id,
+                                    text=text,
+                                    reply_markup=keyboard,
+                                    parse_mode="Markdown",
+                                )
+                            except Exception:
+                                await _bot_app.bot.send_message(
+                                    chat_id=user.telegram_id,
+                                    text=f"📩 New Email from {sender}\nSubject: {subject}\nSummary: {summary}\n\nSuggested Reply:\n{analysis['suggested_reply']}",
+                                    reply_markup=keyboard,
+                                )
+                        else:
+                            text = (
+                                f"📩 *New Email Received*\n\n"
+                                f"👤 *From*: {sender}\n"
+                                f"📌 *Subject*: {subject}\n"
+                                f"💡 *AI Summary*: {summary}"
+                            )
+                            try:
+                                await _bot_app.bot.send_message(
+                                    chat_id=user.telegram_id,
+                                    text=text,
+                                    parse_mode="Markdown",
+                                )
+                            except Exception:
+                                await _bot_app.bot.send_message(
+                                    chat_id=user.telegram_id,
+                                    text=f"📩 New Email from {sender}: {subject}",
+                                )
             except Exception as e:
                 logger.debug(f"Email notification check failed for user {user.id}: {e}")
 
