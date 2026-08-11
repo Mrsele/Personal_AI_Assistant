@@ -5,6 +5,7 @@ returns a final text response + any pending actions for confirmation.
 """
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -17,6 +18,14 @@ from app.database.models import User
 from app.services.conversations import add_message, get_history
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_response_text(text: str) -> str:
+    if not text:
+        return ""
+    cleaned = re.sub(r"<function=[^>]+>.*?</function>", "", text, flags=re.DOTALL)
+    cleaned = re.sub(r" +", " ", cleaned).strip()
+    return cleaned
 
 client_kwargs = {"api_key": settings.openai_api_key}
 if settings.openai_base_url:
@@ -62,7 +71,7 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
 
         # No tool calls → final answer
         if not message.tool_calls:
-            final_text = message.content or ""
+            final_text = _clean_response_text(message.content or "")
             await add_message(user.id, "assistant", final_text)
             return AgentResponse(
                 text=final_text,
