@@ -43,7 +43,7 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
 
     # Build message list: system + history
     history = await get_history(user.id)
-    messages = [{"role": "system", "content": get_system_prompt()}] + history
+    messages = [{"role": "system", "content": get_system_prompt(user)}] + history
 
     pending_action_id = None
     action_type = None

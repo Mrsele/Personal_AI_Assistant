@@ -38,10 +38,15 @@ async def _reply(update: Update, text: str, keyboard=None, parse_mode=ParseMode.
     kwargs = {"text": text, "parse_mode": parse_mode}
     if keyboard:
         kwargs["reply_markup"] = keyboard
-    if update.callback_query:
-        await update.callback_query.message.reply_text(**kwargs)
-    else:
-        await update.message.reply_text(**kwargs)
+    target = update.callback_query.message if update.callback_query else update.message
+    try:
+        await target.reply_text(**kwargs)
+    except Exception as e:
+        if "parse" in str(e).lower() or "entity" in str(e).lower():
+            kwargs["parse_mode"] = None
+            await target.reply_text(**kwargs)
+        else:
+            raise
 
 
 # ── Commands ───────────────────────────────────────────────────────────────────

@@ -139,3 +139,14 @@ async def get_all_users_with_briefing() -> list[User]:
             select(User).where(User.daily_briefing_time.isnot(None))
         )
         return result.scalars().all()
+
+
+async def get_all_connected_users(provider: str = "google") -> list[User]:
+    """Return all User objects that have a connected account for provider."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(User).join(ConnectedAccount, User.id == ConnectedAccount.user_id).where(
+                ConnectedAccount.provider == provider
+            )
+        )
+        return result.scalars().all()
