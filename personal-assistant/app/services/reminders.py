@@ -27,6 +27,9 @@ async def create_reminder(
     if recurrence not in VALID_RECURRENCES:
         raise ValueError(f"Invalid recurrence '{recurrence}'. Use: daily, weekly, monthly, or null.")
 
+    if due_at and due_at.tzinfo is not None:
+        due_at = due_at.astimezone(timezone.utc).replace(tzinfo=None)
+
     async with get_session() as session:
         reminder = Reminder(
             user_id=user_id,

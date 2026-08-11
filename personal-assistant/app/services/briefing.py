@@ -50,9 +50,16 @@ async def get_daily_briefing(user_id: int, user_name: Optional[str] = None) -> s
 
     # Reminders due today
     try:
-        today_end = now.replace(hour=23, minute=59, second=59)
+        def _to_naive(dt):
+            if dt is None:
+                return None
+            if dt.tzinfo is not None:
+                return dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+
+        today_end = _to_naive(now.replace(hour=23, minute=59, second=59))
         all_reminders = await reminder_svc.list_reminders(user_id)
-        due_today = [r for r in all_reminders if r.due_at <= today_end]
+        due_today = [r for r in all_reminders if r.due_at and _to_naive(r.due_at) <= today_end]
         if due_today:
             lines.append("⏰ *Reminders Due Today*")
             for r in due_today:

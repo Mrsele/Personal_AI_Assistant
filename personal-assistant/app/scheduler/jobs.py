@@ -119,8 +119,7 @@ _notified_events = set()
 async def _analyze_and_auto_draft(user, email: dict) -> dict:
     """Analyze incoming email with LLM, summarize, and generate auto reply draft."""
     try:
-        from app.ai.agent import client
-        from app.config import settings
+        from app.ai.agent import _create_chat_completion
         import json
         import re
 
@@ -149,10 +148,8 @@ Return ONLY a JSON object in this format:
     "suggested_reply": "..."
 }}"""
 
-        response = await client.chat.completions.create(
-            model=settings.openai_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
+        response = await _create_chat_completion(
+            messages=[{"role": "user", "content": prompt}]
         )
         content = response.choices[0].message.content or ""
         content = re.sub(r"```json|```", "", content).strip()

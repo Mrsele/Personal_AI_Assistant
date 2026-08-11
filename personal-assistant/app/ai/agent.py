@@ -42,6 +42,33 @@ class AgentResponse:
     action_payload: Optional[dict] = None
 
 
+async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
+    """Create completion with automatic fallback to secondary models if 429 rate limit occurs."""
+    models = [settings.openai_model, "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    seen = set()
+    models = [m for m in models if m and not (m in seen or seen.add(m))]
+
+    last_error = None
+    kwargs = {"messages": messages}
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = tool_choice or "auto"
+
+    for model in models:
+        try:
+            return await client.chat.completions.create(model=model, **kwargs)
+        except Exception as e:
+            err_str = str(e).lower()
+            if "rate_limit" in err_str or "429" in err_str or "limit" in err_str:
+                logger.warning(f"Model {model} hit rate limit, attempting fallback model...")
+                last_error = e
+            else:
+                raise e
+
+    if last_error:
+        raise last_error
+
+
 async def run_agent(user: User, user_message: str) -> AgentResponse:
     """
     Process one user message through the AI agent.
@@ -60,8 +87,7 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
 
     # Agent loop: up to 5 tool call rounds
     for _ in range(5):
-        response = await client.chat.completions.create(
-            model=settings.openai_model,
+        response = await _create_chat_completion(
             messages=messages,
             tools=TOOL_DEFINITIONS,
             tool_choice="auto",
