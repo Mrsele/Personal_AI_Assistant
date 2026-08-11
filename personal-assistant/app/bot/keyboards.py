@@ -26,7 +26,8 @@ def confirm_action_keyboard(action_id: int, action_label: str) -> InlineKeyboard
         [
             InlineKeyboardButton("✅ Confirm", callback_data=f"confirm:{action_id}"),
             InlineKeyboardButton("❌ Cancel", callback_data=f"cancel:{action_id}"),
-        ]
+        ],
+        [InlineKeyboardButton("« Main Menu", callback_data="menu:main")],
     ]
     return InlineKeyboardMarkup(buttons)
 
@@ -38,7 +39,8 @@ def email_draft_keyboard(action_id: int) -> InlineKeyboardMarkup:
             InlineKeyboardButton("📤 Send", callback_data=f"send_email:{action_id}"),
             InlineKeyboardButton("✏️ Edit", callback_data=f"edit_draft:{action_id}"),
             InlineKeyboardButton("❌ Cancel", callback_data=f"cancel:{action_id}"),
-        ]
+        ],
+        [InlineKeyboardButton("« Main Menu", callback_data="menu:main")],
     ]
     return InlineKeyboardMarkup(buttons)
 

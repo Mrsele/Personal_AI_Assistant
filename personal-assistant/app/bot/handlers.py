@@ -3,6 +3,7 @@ Telegram bot handlers: commands, menu buttons, free-text messages,
 and callback query handlers for confirmation buttons.
 """
 import logging
+import re
 from datetime import datetime, timezone
 
 from telegram import Update, InlineKeyboardMarkup
@@ -84,6 +85,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not user_text:
         return
+
+    # Check if user is currently editing an email draft
+    editing_action_id = context.user_data.pop("editing_action_id", None)
+    if editing_action_id:
+        action = await confirmations.get_pending_action(editing_action_id, user.id)
+        if action and action.action_type == "send_email":
+            payload = action.payload
+            payload["body"] = user_text
+
+            try:
+                draft = await gmail_svc.create_draft(
+                    user.id,
+                    to=payload["to"],
+                    subject=payload["subject"],
+                    body=user_text,
+                    reply_to_id=payload.get("reply_to_id"),
+                )
+                payload["draft_id"] = draft["draft_id"]
+            except Exception as e:
+                logger.warning(f"Could not update Gmail draft directly: {e}")
+
+            await confirmations.update_pending_action_payload(action.id, user.id, payload)
+
+            text = (
+                f"✍️ *Updated Email Draft Preview*\n\n"
+                f"👤 *To*: {payload['to']}\n"
+                f"📌 *Subject*: {payload['subject']}\n\n"
+                f"_{user_text}_"
+            )
+            keyboard = keyboards.email_draft_keyboard(action.id)
+            await _reply(update, text, keyboard)
+            return
+
+    # Check if user typed "send", "send it", "send now", "confirm", "yes send" when an active pending action exists
+    send_keywords = {"send", "send it", "send now", "send email", "send this email", "confirm", "yes send", "send please", "send this", "send it please", "send now please"}
+    clean_text = re.sub(r"[^\w\s]", "", user_text.lower()).strip()
+    if clean_text in send_keywords or any(phrase in clean_text for phrase in ["send it", "send now", "send this email", "send email"]):
+        latest_action = await confirmations.get_latest_pending_action(user.id)
+        if latest_action:
+            await _execute_confirmed_action(update, user, latest_action.id)
+            return
 
     # Show typing indicator
     await context.bot.send_chat_action(update.effective_chat.id, ChatAction.TYPING)
@@ -280,7 +322,31 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.MARKDOWN,
             )
 
-        # ── Confirmation / cancellation ──
+        # ── Confirmation / cancellation / editing ──
+        elif data.startswith("edit_draft:"):
+            action_id = int(data.split(":")[1])
+            action = await confirmations.get_pending_action(action_id, user.id)
+            if not action:
+                await query.message.edit_text(
+                    "⚠️ This draft has expired.",
+                    reply_markup=keyboards.back_to_main_keyboard(),
+                    parse_mode=ParseMode.MARKDOWN,
+                )
+                return
+            context.user_data["editing_action_id"] = action_id
+            text = (
+                f"✏️ *Editing Email Draft*\n\n"
+                f"👤 *To*: {action.payload.get('to')}\n"
+                f"📌 *Subject*: {action.payload.get('subject')}\n\n"
+                f"Current Body:\n_{action.payload.get('body')}_\n\n"
+                f"👇 *Please type and send your new email response text below:*"
+            )
+            await query.message.edit_text(
+                text,
+                reply_markup=keyboards.back_to_main_keyboard(),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+
         elif data.startswith("confirm:"):
             action_id = int(data.split(":")[1])
             await _execute_confirmed_action(query, user, action_id)
@@ -303,15 +369,17 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text("⚠️ Something went wrong. Please try again.")
 
 
-async def _execute_confirmed_action(query, user, action_id: int):
+async def _execute_confirmed_action(target, user, action_id: int):
     """Execute a previously queued action after user confirmation."""
     action = await confirmations.get_pending_action(action_id, user.id)
     if not action:
-        await query.message.edit_text(
-            "⚠️ This action has expired. Please try again.",
-            reply_markup=keyboards.back_to_main_keyboard(),
-            parse_mode=ParseMode.MARKDOWN,
-        )
+        text = "⚠️ This action has expired. Please try again."
+        if hasattr(target, "message") and hasattr(target.message, "edit_text"):
+            await target.message.edit_text(text, reply_markup=keyboards.back_to_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        elif hasattr(target, "message") and target.message:
+            await target.message.reply_text(text, reply_markup=keyboards.back_to_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+        else:
+            await _reply(target, text, keyboards.back_to_main_keyboard())
         return
 
     payload = action.payload
@@ -349,10 +417,24 @@ async def _execute_confirmed_action(query, user, action_id: int):
         result_text = messages.error_message("Action failed. Please try again.")
 
     await confirmations.delete_pending_action(action_id, user.id)
-    await query.message.edit_text(
-        result_text, reply_markup=keyboards.back_to_main_keyboard(),
-        parse_mode=ParseMode.MARKDOWN,
-    )
+
+    if hasattr(target, "message") and hasattr(target.message, "edit_text"):
+        try:
+            await target.message.edit_text(
+                result_text, reply_markup=keyboards.back_to_main_keyboard(),
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
+        except Exception:
+            pass
+
+    if hasattr(target, "message") and target.message:
+        await target.message.reply_text(
+            result_text, reply_markup=keyboards.back_to_main_keyboard(),
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    else:
+        await _reply(target, result_text, keyboards.back_to_main_keyboard())
 
 
 # ── App builder ────────────────────────────────────────────────────────────────

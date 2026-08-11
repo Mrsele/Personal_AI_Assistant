@@ -77,3 +77,34 @@ async def cleanup_expired_actions() -> int:
         for action in actions:
             await session.delete(action)
         return count
+
+
+async def update_pending_action_payload(action_id: int, user_id: int, new_payload: dict) -> Optional[PendingAction]:
+    async with get_session() as session:
+        result = await session.execute(
+            select(PendingAction).where(
+                PendingAction.id == action_id,
+                PendingAction.user_id == user_id,
+            )
+        )
+        action = result.scalar_one_or_none()
+        if action:
+            action.payload = new_payload
+            await session.flush()
+            await session.refresh(action)
+        return action
+
+
+async def get_latest_pending_action(user_id: int) -> Optional[PendingAction]:
+    """Get the most recent active pending action for a user."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(PendingAction)
+            .where(
+                PendingAction.user_id == user_id,
+                PendingAction.expires_at > datetime.utcnow(),
+            )
+            .order_by(PendingAction.created_at.desc())
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
