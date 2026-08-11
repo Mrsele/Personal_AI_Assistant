@@ -112,8 +112,34 @@ async def cleanup_expired_actions():
         logger.error(f"Cleanup error: {e}")
 
 
-_notified_emails = set()
-_notified_events = set()
+import json
+from pathlib import Path
+
+CACHE_FILE = Path("notified_cache.json")
+
+
+def _load_notified_cache() -> tuple[set, set]:
+    if CACHE_FILE.exists():
+        try:
+            data = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+            return set(data.get("emails", [])), set(data.get("events", []))
+        except Exception:
+            pass
+    return set(), set()
+
+
+def _save_notified_cache(emails: set, events: set):
+    try:
+        data = {
+            "emails": list(emails)[-1000:],
+            "events": list(events)[-1000:],
+        }
+        CACHE_FILE.write_text(json.dumps(data), encoding="utf-8")
+    except Exception as e:
+        logger.debug(f"Could not save notified cache: {e}")
+
+
+_notified_emails, _notified_events = _load_notified_cache()
 
 
 async def _analyze_and_auto_draft(user, email: dict) -> dict:
@@ -190,8 +216,7 @@ async def check_and_notify_google_updates():
                     email_id = email["id"]
                     if email_id not in _notified_emails:
                         _notified_emails.add(email_id)
-                        if len(_notified_emails) > 1000:
-                            _notified_emails.pop()
+                        _save_notified_cache(_notified_emails, _notified_events)
 
                         # Get full detail for deep AI analysis
                         full_email = await get_email(user.id, email_id)
@@ -273,8 +298,7 @@ async def check_and_notify_google_updates():
                     event_id = event["id"]
                     if event_id not in _notified_events:
                         _notified_events.add(event_id)
-                        if len(_notified_events) > 1000:
-                            _notified_events.pop()
+                        _save_notified_cache(_notified_emails, _notified_events)
 
                         text = (
                             f"📅 *Upcoming Calendar Event (Starts Soon)*\n\n"
