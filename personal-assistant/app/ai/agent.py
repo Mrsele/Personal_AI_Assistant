@@ -69,6 +69,37 @@ async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
         raise last_error
 
 
+def _extract_text_tool_calls(content: str) -> list[tuple[str, dict]]:
+    """Extract pseudo text tool calls like `name>{"arg": "val"}` or `<function=name>{...}`."""
+    if not content:
+        return []
+
+    results = []
+
+    # 1. Match <function=name>{"arg": "val"}</function> or <function=name>{"arg": "val"}
+    matches1 = re.findall(r"<function=([a-zA-Z0-9_]+)>\s*(\{.*?\})(?:</function>|$)", content, re.DOTALL)
+    for name, args_str in matches1:
+        try:
+            args = json.loads(args_str)
+            results.append((name, args))
+        except Exception:
+            pass
+
+    if results:
+        return results
+
+    # 2. Match name>{"arg": "val"}
+    matches2 = re.findall(r"([a-zA-Z0-9_]+)>\s*(\{.*?\})", content, re.DOTALL)
+    for name, args_str in matches2:
+        try:
+            args = json.loads(args_str)
+            results.append((name, args))
+        except Exception:
+            pass
+
+    return results
+
+
 async def run_agent(user: User, user_message: str) -> AgentResponse:
     """
     Process one user message through the AI agent.
@@ -94,10 +125,19 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
         )
 
         message = response.choices[0].message
+        raw_text = message.content or ""
+
+        tool_calls = message.tool_calls or []
+        pseudo_calls = []
+
+        if not tool_calls:
+            text_calls = _extract_text_tool_calls(raw_text)
+            for name, args in text_calls:
+                pseudo_calls.append((name, args))
 
         # No tool calls → final answer
-        if not message.tool_calls:
-            final_text = _clean_response_text(message.content or "")
+        if not tool_calls and not pseudo_calls:
+            final_text = _clean_response_text(raw_text)
             await add_message(user.id, "assistant", final_text)
             return AgentResponse(
                 text=final_text,
@@ -106,30 +146,43 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
                 action_payload=action_payload,
             )
 
-        # Process tool calls
-        messages.append(message)  # add assistant message with tool_calls
+        messages.append(message)
 
-        for tool_call in message.tool_calls:
-            name = tool_call.function.name
-            try:
-                args = json.loads(tool_call.function.arguments)
-            except json.JSONDecodeError:
-                args = {}
+        if tool_calls:
+            for tool_call in tool_calls:
+                name = tool_call.function.name
+                try:
+                    args = json.loads(tool_call.function.arguments)
+                except json.JSONDecodeError:
+                    args = {}
 
-            logger.info(f"Tool call: {name}({args}) for user {user.id}")
-            result: ToolResult = await dispatch_tool(name, args, user)
+                logger.info(f"Tool call: {name}({args}) for user {user.id}")
+                result: ToolResult = await dispatch_tool(name, args, user)
 
-            # Track the last pending action (most tools only create one)
-            if result.pending_action_id:
-                pending_action_id = result.pending_action_id
-                action_type = result.action_type
-                action_payload = result.data if isinstance(result.data, dict) else None
+                if result.pending_action_id:
+                    pending_action_id = result.pending_action_id
+                    action_type = result.action_type
+                    action_payload = result.data if isinstance(result.data, dict) else None
 
-            messages.append({
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": json.dumps(result.data, default=str),
-            })
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": json.dumps(result.data, default=str),
+                })
+        else:
+            for name, args in pseudo_calls:
+                logger.info(f"Pseudo text tool call: {name}({args}) for user {user.id}")
+                result: ToolResult = await dispatch_tool(name, args, user)
+
+                if result.pending_action_id:
+                    pending_action_id = result.pending_action_id
+                    action_type = result.action_type
+                    action_payload = result.data if isinstance(result.data, dict) else None
+
+                messages.append({
+                    "role": "user",
+                    "content": f"[System Tool Result for {name}]: {json.dumps(result.data, default=str)}",
+                })
 
     # Fallback if we hit the loop limit
     fallback = "I've gathered the information. Let me know if you need anything else."

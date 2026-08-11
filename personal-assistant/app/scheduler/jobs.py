@@ -117,7 +117,7 @@ _notified_events = set()
 
 
 async def _analyze_and_auto_draft(user, email: dict) -> dict:
-    """Analyze incoming email with LLM, summarize, and generate auto reply draft."""
+    """Analyze incoming email with LLM, summarize, and generate auto reply / cover letter draft."""
     try:
         from app.ai.agent import _create_chat_completion
         import json
@@ -137,13 +137,17 @@ Content Snippet: {snippet}
 Task:
 1. Provide a 1-sentence summary of the email.
 2. Assess priority (High, Medium, Low).
-3. Determine if this email requires or benefits from a reply (true/false).
-4. If true, write a polite, concise, professional reply draft body.
+3. Check if this is a LinkedIn job recommendation, job alert, or recruiter/job email (set is_job=true/false).
+4. Determine if this email requires or benefits from a reply or job application draft (true/false).
+5. If this is a LinkedIn job alert, job recommendation, or recruiter email:
+   - Write a compelling, highly professional Cover Letter & Application Email body for {user.name or 'the user'}.
+6. If it is a standard email needing a reply, write a polite, concise professional reply draft.
 
 Return ONLY a JSON object in this format:
 {{
     "summary": "...",
     "priority": "High",
+    "is_job": true,
     "requires_reply": true,
     "suggested_reply": "..."
 }}"""
@@ -159,6 +163,7 @@ Return ONLY a JSON object in this format:
         return {
             "summary": email.get("snippet", ""),
             "priority": "Medium",
+            "is_job": False,
             "requires_reply": False,
             "suggested_reply": "",
         }
@@ -212,13 +217,16 @@ async def check_and_notify_google_updates():
                             )
                             action = await confirmations.create_pending_action(user.id, "send_email", draft)
 
+                            header = "💼 *LinkedIn / Job Recommendation Analyzed*" if analysis.get("is_job") else "📩 *New Email Analyzed*"
+                            preview_header = "✍️ *Auto-Drafted Cover Letter Preview*:" if analysis.get("is_job") else "✍️ *Auto-Drafted Reply Preview*:"
+
                             text = (
-                                f"📩 *New Email Analyzed*\n\n"
+                                f"{header}\n\n"
                                 f"👤 *From*: {sender}\n"
                                 f"📌 *Subject*: {subject}\n"
                                 f"⚡️ *Priority*: {priority}\n"
                                 f"💡 *AI Summary*: {summary}\n\n"
-                                f"✍️ *Auto-Drafted Reply Preview*:\n"
+                                f"{preview_header}\n"
                                 f"_{analysis['suggested_reply']}_"
                             )
                             keyboard = keyboards.email_draft_keyboard(action.id)

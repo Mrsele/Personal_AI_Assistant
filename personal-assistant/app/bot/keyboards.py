@@ -10,16 +10,57 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton("⏰ Reminders", callback_data="menu:reminders"),
+            InlineKeyboardButton("📌 To-Dos", callback_data="menu:todos"),
+        ],
+        [
+            InlineKeyboardButton("🔄 Routines", callback_data="menu:routines"),
             InlineKeyboardButton("📅 Calendar", callback_data="menu:calendar"),
         ],
         [
+            InlineKeyboardButton("🗺️ Plans", callback_data="menu:plans"),
             InlineKeyboardButton("💡 My Ideas", callback_data="menu:ideas"),
-            InlineKeyboardButton("☀️ Daily Briefing", callback_data="menu:briefing"),
         ],
         [
+            InlineKeyboardButton("🎨 Image Gen", callback_data="menu:image_gen"),
+            InlineKeyboardButton("☀️ Briefing", callback_data="menu:briefing"),
             InlineKeyboardButton("⚙️ Settings", callback_data="menu:settings"),
         ],
     ]
+    return InlineKeyboardMarkup(buttons)
+
+
+def todo_list_keyboard(tasks: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for t in tasks[:6]:
+        status = "✅" if t.completed else "☐"
+        buttons.append([
+            InlineKeyboardButton(f"{status} {t.title[:25]}", callback_data=f"todo:complete:{t.id}"),
+            InlineKeyboardButton("🗑", callback_data=f"todo:delete:{t.id}"),
+        ])
+    buttons.append([InlineKeyboardButton("« Main Menu", callback_data="menu:main")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def routine_list_keyboard(routines_list: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for r in routines_list[:6]:
+        status = "🔥" if r.completed_today else "⚡️"
+        buttons.append([
+            InlineKeyboardButton(f"{status} {r.title[:20]} ({r.streak}d streak)", callback_data=f"routine:done:{r.id}"),
+            InlineKeyboardButton("🗑", callback_data=f"routine:delete:{r.id}"),
+        ])
+    buttons.append([InlineKeyboardButton("« Main Menu", callback_data="menu:main")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def plans_list_keyboard(plans_list: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for p in plans_list[:6]:
+        buttons.append([
+            InlineKeyboardButton(f"🗺️ {p.title[:25]}", callback_data=f"plan:view:{p.id}"),
+            InlineKeyboardButton("🗑", callback_data=f"plan:delete:{p.id}"),
+        ])
+    buttons.append([InlineKeyboardButton("« Main Menu", callback_data="menu:main")])
     return InlineKeyboardMarkup(buttons)
 
 

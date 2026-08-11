@@ -16,6 +16,7 @@ from telegram.ext import (
 from app.bot import keyboards, messages
 from app.ai.agent import run_agent
 from app.services import users as user_svc, confirmations
+from app.services import todos as todo_svc, routines as routine_svc, plans as plan_svc
 from app.services.reminders import list_reminders, complete_reminder, delete_reminder
 from app.services.ideas import list_ideas, get_idea, delete_idea
 from app.services.briefing import get_daily_briefing
@@ -158,6 +159,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not keyboard:
         keyboard = keyboards.back_to_main_keyboard()
 
+    img_match = re.search(r"https://image\.pollinations\.ai/prompt/[^\s\)]+", response.text or "")
+    if img_match:
+        img_url = img_match.group(0)
+        try:
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=img_url,
+                caption=response.text[:1024],
+                reply_markup=keyboard,
+            )
+            return
+        except Exception as e:
+            logger.warning(f"Could not send photo directly: {e}")
+
     await _reply(update, response.text or "Done!", keyboard)
 
 
@@ -192,6 +207,95 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text = "\n\n".join(lines)
                 keyboard = keyboards.drafts_list_keyboard(actions)
             await query.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
+        elif data == "menu:todos":
+            items = await todo_svc.list_tasks(user.id)
+            if not items:
+                text = "📌 *To-Do Tasks*\n\nNo pending tasks! Tell me e.g. _\"Add to-do: buy groceries\"_ to create one."
+                keyboard = keyboards.back_to_main_keyboard()
+            else:
+                lines = ["📌 *Your To-Do List*\n"]
+                for t in items:
+                    status = "✅" if t.completed else "☐"
+                    lines.append(f"{status} *{t.title}* [{t.priority}]")
+                text = "\n".join(lines)
+                keyboard = keyboards.todo_list_keyboard(items)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
+        elif data == "menu:routines":
+            items = await routine_svc.list_routines(user.id)
+            if not items:
+                text = "🔄 *Routines & Habits*\n\nNo routines set! Tell me e.g. _\"Create a daily routine: Morning workout\"_."
+                keyboard = keyboards.back_to_main_keyboard()
+            else:
+                lines = ["🔄 *Your Daily & Weekly Routines*\n"]
+                for r in items:
+                    status = "🔥" if r.completed_today else "⚡️"
+                    lines.append(f"{status} *{r.title}* — {r.streak}d streak ({r.time_of_day})")
+                text = "\n".join(lines)
+                keyboard = keyboards.routine_list_keyboard(items)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
+        elif data == "menu:plans":
+            items = await plan_svc.list_plans(user.id)
+            if not items:
+                text = "🗺️ *Plans & Itineraries*\n\nNo plans saved! Tell me e.g. _\"Plan a 3-day trip to Paris\"_ or _\"Create a study plan for Python\"_."
+                keyboard = keyboards.back_to_main_keyboard()
+            else:
+                lines = ["🗺️ *Your Plans & Itineraries*\n"]
+                for p in items:
+                    lines.append(f"• *{p.title}* [{p.category}]\n  _{p.content[:100]}..._")
+                text = "\n\n".join(lines)
+                keyboard = keyboards.plans_list_keyboard(items)
+            await query.message.edit_text(text, reply_markup=keyboard, parse_mode=ParseMode.MARKDOWN)
+
+        elif data == "menu:image_gen":
+            text = "🎨 *AI Image Generator*\n\nSend me a message like:\n_\"Generate an image of a futuristic electric G-Wagen driving through a neon city at night\"_"
+            await query.message.edit_text(text, reply_markup=keyboards.back_to_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+
+        elif data.startswith("todo:complete:"):
+            tid = int(data.split(":")[2])
+            await todo_svc.complete_task(tid, user.id)
+            items = await todo_svc.list_tasks(user.id)
+            text = "✅ Task marked as completed!" if not items else "\n".join([f"{'✅' if t.completed else '☐'} *{t.title}*" for t in items])
+            await query.message.edit_text(text, reply_markup=keyboards.todo_list_keyboard(items), parse_mode=ParseMode.MARKDOWN)
+
+        elif data.startswith("todo:delete:"):
+            tid = int(data.split(":")[2])
+            await todo_svc.delete_task(tid, user.id)
+            items = await todo_svc.list_tasks(user.id)
+            text = "🗑 Task deleted." if not items else "\n".join([f"{'✅' if t.completed else '☐'} *{t.title}*" for t in items])
+            await query.message.edit_text(text, reply_markup=keyboards.todo_list_keyboard(items), parse_mode=ParseMode.MARKDOWN)
+
+        elif data.startswith("routine:done:"):
+            rid = int(data.split(":")[2])
+            rt = await routine_svc.mark_routine_done(rid, user.id)
+            items = await routine_svc.list_routines(user.id)
+            text = f"🔥 Routine done! Current streak: {rt.streak} days!" if rt else "Done!"
+            await query.message.edit_text(text, reply_markup=keyboards.routine_list_keyboard(items), parse_mode=ParseMode.MARKDOWN)
+
+        elif data.startswith("routine:delete:"):
+            rid = int(data.split(":")[2])
+            await routine_svc.delete_routine(rid, user.id)
+            items = await routine_svc.list_routines(user.id)
+            text = "🗑 Routine deleted." if not items else "\n".join([f"⚡️ *{r.title}*" for r in items])
+            await query.message.edit_text(text, reply_markup=keyboards.routine_list_keyboard(items), parse_mode=ParseMode.MARKDOWN)
+
+        elif data.startswith("plan:view:"):
+            pid = int(data.split(":")[2])
+            plan = await plan_svc.get_plan(pid, user.id)
+            if plan:
+                text = f"🗺️ *{plan.title}* [{plan.category}]\n\n{plan.content}"
+            else:
+                text = "⚠️ Plan not found."
+            await query.message.edit_text(text, reply_markup=keyboards.back_to_main_keyboard(), parse_mode=ParseMode.MARKDOWN)
+
+        elif data.startswith("plan:delete:"):
+            pid = int(data.split(":")[2])
+            await plan_svc.delete_plan(pid, user.id)
+            items = await plan_svc.list_plans(user.id)
+            text = "🗑 Plan deleted." if not items else "\n".join([f"• *{p.title}*" for p in items])
+            await query.message.edit_text(text, reply_markup=keyboards.plans_list_keyboard(items), parse_mode=ParseMode.MARKDOWN)
 
         elif data == "menu:reminders":
             items = await list_reminders(user.id)

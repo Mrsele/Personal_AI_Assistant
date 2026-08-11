@@ -7,8 +7,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from app.integrations import gmail, calendar as gcal, web_search
-from app.services import reminders, ideas, confirmations
+from app.integrations import gmail, calendar as gcal, web_search, image_gen
+from app.services import reminders, ideas, confirmations, todos, routines, plans
 from app.database.models import User
 
 logger = logging.getLogger(__name__)
@@ -16,6 +16,137 @@ logger = logging.getLogger(__name__)
 # ── Tool schemas for OpenAI ────────────────────────────────────────────────────
 
 TOOL_DEFINITIONS = [
+    # Image Generation
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_image",
+            "description": "Generate an AI image based on a prompt (e.g. 'G Wagen car', 'sunset over mountains').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "prompt": {"type": "string", "description": "Descriptive English prompt of what image to generate"},
+                },
+                "required": ["prompt"],
+            },
+        },
+    },
+    # To-Do Lists & Tasks
+    {
+        "type": "function",
+        "function": {
+            "name": "create_todo",
+            "description": "Create a new to-do task for the user.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Task description/title"},
+                    "priority": {"type": "string", "enum": ["High", "Medium", "Low"], "default": "Medium"},
+                    "category": {"type": "string", "default": "General"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_todos",
+            "description": "List all active or completed to-do tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_completed": {"type": "boolean", "default": False},
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "complete_todo",
+            "description": "Mark a to-do task as completed.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "todo_id": {"type": "integer"},
+                },
+                "required": ["todo_id"],
+            },
+        },
+    },
+    # Routines & Habits
+    {
+        "type": "function",
+        "function": {
+            "name": "create_routine",
+            "description": "Create a daily or weekly recurring routine / habit tracker.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Routine name (e.g. 'Morning Meditation', 'Workout')"},
+                    "frequency": {"type": "string", "enum": ["daily", "weekly"], "default": "daily"},
+                    "time_of_day": {"type": "string", "default": "Morning"},
+                },
+                "required": ["title"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_routines",
+            "description": "List all recurring routines and habits with their streaks.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "mark_routine_done",
+            "description": "Mark a daily routine as completed today and increment streak.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "routine_id": {"type": "integer"},
+                },
+                "required": ["routine_id"],
+            },
+        },
+    },
+    # Plans & Trip Itineraries
+    {
+        "type": "function",
+        "function": {
+            "name": "create_plan",
+            "description": "Create a structured plan, trip itinerary, study plan, or project outline.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Plan title (e.g. '3-Day Paris Trip', 'Python Study Plan')"},
+                    "content": {"type": "string", "description": "Detailed plan steps, schedule, or itinerary"},
+                    "category": {"type": "string", "default": "Trip"},
+                },
+                "required": ["title", "content"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_plans",
+            "description": "List saved plans, itineraries, and project outlines.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "category": {"type": "string", "description": "Filter by category ('Trip', 'Study', 'Project', 'Work')"},
+                },
+            },
+        },
+    },
     # Web Search
     {
         "type": "function",
@@ -273,6 +404,46 @@ async def dispatch_tool(name: str, args: dict, user: User) -> ToolResult:
     uid = user.id
     try:
         match name:
+            # ── Image Generation ──
+            case "generate_image":
+                img_url = await image_gen.generate_image(args["prompt"])
+                return ToolResult({"prompt": args["prompt"], "image_url": img_url})
+
+            # ── To-Do Tasks ──
+            case "create_todo":
+                task = await todos.create_task(uid, args["title"], args.get("category", "General"), args.get("priority", "Medium"))
+                return ToolResult({"id": task.id, "title": task.title, "priority": task.priority})
+
+            case "list_todos":
+                items = await todos.list_tasks(uid, args.get("include_completed", False))
+                return ToolResult([{"id": t.id, "title": t.title, "priority": t.priority, "completed": t.completed} for t in items])
+
+            case "complete_todo":
+                task = await todos.complete_task(args["todo_id"], uid)
+                return ToolResult({"status": "completed", "id": args["todo_id"]} if task else {"error": "Not found"})
+
+            # ── Routines & Habits ──
+            case "create_routine":
+                rt = await routines.create_routine(uid, args["title"], args.get("frequency", "daily"), args.get("time_of_day", "Morning"))
+                return ToolResult({"id": rt.id, "title": rt.title, "frequency": rt.frequency})
+
+            case "list_routines":
+                items = await routines.list_routines(uid)
+                return ToolResult([{"id": r.id, "title": r.title, "streak": r.streak, "completed_today": r.completed_today} for r in items])
+
+            case "mark_routine_done":
+                rt = await routines.mark_routine_done(args["routine_id"], uid)
+                return ToolResult({"status": "done", "streak": rt.streak} if rt else {"error": "Not found"})
+
+            # ── Plans & Trip Itineraries ──
+            case "create_plan":
+                pl = await plans.create_plan(uid, args["title"], args["content"], args.get("category", "Trip"))
+                return ToolResult({"id": pl.id, "title": pl.title, "category": pl.category})
+
+            case "list_plans":
+                items = await plans.list_plans(uid, args.get("category"))
+                return ToolResult([{"id": p.id, "title": p.title, "category": p.category, "content": p.content[:200]} for p in items])
+
             # ── Web Search ──
             case "search_web":
                 data = await web_search.search_web(args["query"], args.get("max_results", 5))
@@ -325,8 +496,14 @@ async def dispatch_tool(name: str, args: dict, user: User) -> ToolResult:
             # ── Reminders ──
             case "create_reminder":
                 due_at = datetime.fromisoformat(args["due_at"].replace("Z", "+00:00"))
+                now_year = datetime.now().year
+                if due_at.year < now_year:
+                    due_at = due_at.replace(year=now_year)
+                rec = args.get("recurrence")
+                if rec and str(rec).lower() in ("none", "null", "false", ""):
+                    rec = None
                 reminder = await reminders.create_reminder(
-                    uid, args["title"], due_at, args.get("recurrence")
+                    uid, args["title"], due_at, rec
                 )
                 return ToolResult({"id": reminder.id, "title": reminder.title,
                                    "due_at": str(reminder.due_at)})

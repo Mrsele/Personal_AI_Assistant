@@ -24,6 +24,9 @@ async def create_reminder(
     due_at: datetime,
     recurrence: Optional[str] = None,
 ) -> Reminder:
+    if not recurrence or str(recurrence).lower() in ("none", "null", "false", ""):
+        recurrence = None
+
     if recurrence not in VALID_RECURRENCES:
         raise ValueError(f"Invalid recurrence '{recurrence}'. Use: daily, weekly, monthly, or null.")
 

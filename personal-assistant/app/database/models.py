@@ -98,3 +98,46 @@ class PendingAction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="pending_actions")
+
+
+class Task(Base):
+    __tablename__ = "tasks"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(Text, nullable=False)
+    category = Column(String(64), default="General")
+    priority = Column(String(32), default="Medium")  # 'High', 'Medium', 'Low'
+    completed = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
+
+
+class Routine(Base):
+    __tablename__ = "routines"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(Text, nullable=False)
+    frequency = Column(String(32), default="daily")  # 'daily' | 'weekly'
+    time_of_day = Column(String(64), nullable=True)  # e.g. "Morning", "8:00 AM"
+    streak = Column(Integer, default=0)
+    completed_today = Column(Boolean, default=False)
+    last_completed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
+
+
+class Plan(Base):
+    __tablename__ = "plans"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    title = Column(Text, nullable=False)
+    category = Column(String(64), default="General")  # 'Trip', 'Study', 'Project', 'Work'
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")
