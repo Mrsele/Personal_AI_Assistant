@@ -282,8 +282,8 @@ TOOL_DEFINITIONS = [
                     "due_at": {"type": "string", "description": "ISO datetime in UTC"},
                     "recurrence": {
                         "type": "string",
-                        "enum": ["daily", "weekly", "monthly"],
-                        "description": "Optional recurrence",
+                        "enum": ["daily", "weekly", "monthly", "none"],
+                        "description": "Recurrence interval ('daily', 'weekly', 'monthly', or 'none' if non-recurring).",
                     },
                 },
                 "required": ["title", "due_at"],

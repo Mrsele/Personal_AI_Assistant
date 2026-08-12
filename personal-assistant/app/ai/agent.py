@@ -70,11 +70,12 @@ async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
 
 
 def _extract_text_tool_calls(content: str) -> list[tuple[str, dict]]:
-    """Extract pseudo text tool calls like `name>{"arg": "val"}` or `<function=name>{...}`."""
+    """Extract pseudo text tool calls like `name>{"arg": "val"}`, `name{"arg": "val"}` or `<function=name>{...}`."""
     if not content:
         return []
 
     results = []
+    known_tools = {t["function"]["name"] for t in TOOL_DEFINITIONS}
 
     # 1. Match <function=name>{"arg": "val"}</function> or <function=name>{"arg": "val"}
     matches1 = re.findall(r"<function=([a-zA-Z0-9_]+)>\s*(\{.*?\})(?:</function>|$)", content, re.DOTALL)
@@ -96,6 +97,20 @@ def _extract_text_tool_calls(content: str) -> list[tuple[str, dict]]:
             results.append((name, args))
         except Exception:
             pass
+
+    if results:
+        return results
+
+    # 3. Match name{"arg": "val"} for known tool names
+    if known_tools:
+        pattern3 = r"\b(" + "|".join(re.escape(n) for n in known_tools) + r")\s*(\{.*?\})"
+        matches3 = re.findall(pattern3, content, re.DOTALL)
+        for name, args_str in matches3:
+            try:
+                args = json.loads(args_str)
+                results.append((name, args))
+            except Exception:
+                pass
 
     return results
 
@@ -164,6 +179,13 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
                     action_type = result.action_type
                     action_payload = result.data if isinstance(result.data, dict) else None
 
+                if name == "generate_image" and isinstance(result.data, dict) and "image_url" in result.data:
+                    prompt = result.data.get("prompt", "")
+                    img_url = result.data["image_url"]
+                    final_text = f"🎨 *Generated Image*\n\nPrompt: _{prompt}_\n{img_url}"
+                    await add_message(user.id, "assistant", final_text)
+                    return AgentResponse(text=final_text)
+
                 messages.append({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
@@ -173,6 +195,13 @@ async def run_agent(user: User, user_message: str) -> AgentResponse:
             for name, args in pseudo_calls:
                 logger.info(f"Pseudo text tool call: {name}({args}) for user {user.id}")
                 result: ToolResult = await dispatch_tool(name, args, user)
+
+                if name == "generate_image" and isinstance(result.data, dict) and "image_url" in result.data:
+                    prompt = result.data.get("prompt", "")
+                    img_url = result.data["image_url"]
+                    final_text = f"🎨 *Generated Image*\n\nPrompt: _{prompt}_\n{img_url}"
+                    await add_message(user.id, "assistant", final_text)
+                    return AgentResponse(text=final_text)
 
                 if result.pending_action_id:
                     pending_action_id = result.pending_action_id
