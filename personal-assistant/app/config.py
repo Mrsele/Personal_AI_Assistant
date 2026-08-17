@@ -10,7 +10,7 @@ class Settings(BaseSettings):
 
     # OpenAI / Compatible API (DeepSeek, OpenRouter, Groq, etc.)
     openai_api_key: str
-    openai_model: str = "llama-3.1-8b-instant"
+    openai_model: str = "openai/gpt-oss-120b"
     openai_base_url: Optional[str] = None
 
     # Database

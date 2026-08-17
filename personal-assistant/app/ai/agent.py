@@ -43,16 +43,16 @@ class AgentResponse:
 
 
 async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
-    """Create completion with automatic fallback across candidate models."""
+    """Create completion with automatic fallback across active candidate models."""
     candidate_models = [
         settings.openai_model,
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b",
+        "groq/compound",
+        "groq/compound-mini",
         "llama-3.3-70b-versatile",
-        "llama3-70b-8192",
-        "llama3-8b-8192",
         "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it",
-        "deepseek-r1-distill-llama-70b",
     ]
     seen = set()
     models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
