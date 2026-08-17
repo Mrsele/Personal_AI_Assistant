@@ -61,9 +61,40 @@ async def _run_bot():
     await asyncio.Event().wait()
 
 
+@web_app.get("/", response_class=HTMLResponse)
+async def root():
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Personal AI Assistant</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .card { background: #1e293b; padding: 2.5rem; border-radius: 1rem; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); text-align: center; max-width: 420px; }
+            .badge { display: inline-block; padding: 0.25rem 0.75rem; background: #065f46; color: #34d399; border-radius: 9999px; font-size: 0.875rem; font-weight: 600; margin-bottom: 1rem; }
+            h1 { margin: 0.5rem 0; font-size: 1.5rem; }
+            p { color: #94a3b8; line-height: 1.5; }
+            a.btn { display: inline-block; margin-top: 1.25rem; padding: 0.75rem 1.5rem; background: #2563eb; color: white; text-decoration: none; border-radius: 0.5rem; font-weight: 600; }
+            a.btn:hover { background: #1d4ed8; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <span class="badge">● Online & Healthy</span>
+            <h1>🤖 Personal AI Assistant</h1>
+            <p>Your assistant server is live and actively connected to Telegram, Gmail, and Google Calendar.</p>
+            <a class="btn" href="https://t.me/AI_Personal_Support_bot" target="_blank">Open Telegram Bot</a>
+        </div>
+    </body>
+    </html>
+    """
+
+
 @web_app.get("/health")
 async def health():
-    return {"status": "ok"}
+    return {"status": "ok", "service": "personal-ai-assistant"}
 
 
 @web_app.get("/auth/google/callback")
