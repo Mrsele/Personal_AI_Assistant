@@ -43,10 +43,17 @@ class AgentResponse:
 
 
 async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
-    """Create completion with automatic fallback to secondary models if 429 rate limit occurs."""
-    models = [settings.openai_model, "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+    """Create completion with automatic fallback to secondary models if 429 or 404 errors occur."""
+    candidate_models = [
+        settings.openai_model,
+        "llama-3.1-8b-instant",
+        "llama-3.1-70b-versatile",
+        "llama3-70b-8192",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
+    ]
     seen = set()
-    models = [m for m in models if m and not (m in seen or seen.add(m))]
+    models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
 
     last_error = None
     kwargs = {"messages": messages}
@@ -59,8 +66,9 @@ async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
             return await client.chat.completions.create(model=model, **kwargs)
         except Exception as e:
             err_str = str(e).lower()
-            if "rate_limit" in err_str or "429" in err_str or "limit" in err_str:
-                logger.warning(f"Model {model} hit rate limit, attempting fallback model...")
+            is_fallbackable = any(k in err_str for k in ("429", "rate_limit", "rate limit", "limit", "404", "model_not_found", "not exist", "overloaded", "503"))
+            if is_fallbackable:
+                logger.warning(f"Model {model} unavailable ({e}), attempting fallback model...")
                 last_error = e
             else:
                 raise e
