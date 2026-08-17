@@ -56,12 +56,12 @@ web_app = FastAPI(title="Personal Assistant", lifespan=lifespan)
 
 async def _run_bot():
     await _bot_app.start()
-    await _bot_app.updater.start_polling(drop_pending_updates=True)
+    await _bot_app.updater.start_polling(drop_pending_updates=False)
     # Keep running until the process ends
     await asyncio.Event().wait()
 
 
-@web_app.get("/", response_class=HTMLResponse)
+@web_app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def root():
     return """
     <!DOCTYPE html>
@@ -92,7 +92,7 @@ async def root():
     """
 
 
-@web_app.get("/health")
+@web_app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
     return {"status": "ok", "service": "personal-ai-assistant"}
 
