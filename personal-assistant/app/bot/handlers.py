@@ -580,6 +580,18 @@ async def drafts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _reply(update, text, keyboard)
 
 
+async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error(f"Telegram update exception: {context.error}", exc_info=context.error)
+    if isinstance(update, Update) and update.effective_message:
+        try:
+            await update.effective_message.reply_text(
+                "⚠️ An unexpected error occurred. Please try again.",
+                reply_markup=keyboards.back_to_main_keyboard(),
+            )
+        except Exception:
+            pass
+
+
 def build_application(token: str) -> Application:
     app = Application.builder().token(token).build()
 
@@ -589,5 +601,6 @@ def build_application(token: str) -> Application:
     app.add_handler(CommandHandler("drafts", drafts_command))
     app.add_handler(CallbackQueryHandler(handle_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(global_error_handler)
 
     return app
