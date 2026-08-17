@@ -112,10 +112,12 @@ async def google_oauth_callback(request: Request, code: str = None, state: str =
 
 
 def main():
+    import os
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(
         "app.main:web_app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         reload=False,
         log_level=settings.log_level.lower(),
     )
