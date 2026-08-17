@@ -24,12 +24,25 @@ SCOPES = [
     "openid",
 ]
 
+def get_redirect_uri() -> str:
+    import os
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if render_url:
+        return f"{render_url.rstrip('/')}/auth/google/callback"
+    if settings.google_redirect_uri and "localhost" not in settings.google_redirect_uri:
+        return settings.google_redirect_uri
+    if settings.base_url and "localhost" not in settings.base_url:
+        return f"{settings.base_url.rstrip('/')}/auth/google/callback"
+    return settings.google_redirect_uri or "http://localhost:8000/auth/google/callback"
+
+
 def get_client_config():
+    redirect_uri = get_redirect_uri()
     return {
         "web": {
             "client_id": settings.google_client_id,
             "client_secret": settings.google_client_secret,
-            "redirect_uris": [settings.google_redirect_uri],
+            "redirect_uris": [redirect_uri],
             "auth_uri": "https://accounts.google.com/o/oauth2/auth",
             "token_uri": "https://oauth2.googleapis.com/token",
         }
@@ -37,8 +50,9 @@ def get_client_config():
 
 
 def build_auth_url(state: str) -> str:
+    redirect_uri = get_redirect_uri()
     flow = Flow.from_client_config(get_client_config(), scopes=SCOPES)
-    flow.redirect_uri = settings.google_redirect_uri
+    flow.redirect_uri = redirect_uri
     auth_url, _ = flow.authorization_url(
         access_type="offline",
         include_granted_scopes="true",

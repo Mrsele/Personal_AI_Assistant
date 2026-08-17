@@ -43,14 +43,16 @@ class AgentResponse:
 
 
 async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
-    """Create completion with automatic fallback to secondary models if 429 or 404 errors occur."""
+    """Create completion with automatic fallback across candidate models."""
     candidate_models = [
         settings.openai_model,
-        "llama-3.1-8b-instant",
-        "llama-3.1-70b-versatile",
+        "llama-3.3-70b-versatile",
         "llama3-70b-8192",
+        "llama3-8b-8192",
+        "llama-3.1-8b-instant",
         "mixtral-8x7b-32768",
         "gemma2-9b-it",
+        "deepseek-r1-distill-llama-70b",
     ]
     seen = set()
     models = [m for m in candidate_models if m and not (m in seen or seen.add(m))]
@@ -65,13 +67,8 @@ async def _create_chat_completion(messages: list, tools=None, tool_choice=None):
         try:
             return await client.chat.completions.create(model=model, **kwargs)
         except Exception as e:
-            err_str = str(e).lower()
-            is_fallbackable = any(k in err_str for k in ("429", "rate_limit", "rate limit", "limit", "404", "model_not_found", "not exist", "overloaded", "503"))
-            if is_fallbackable:
-                logger.warning(f"Model {model} unavailable ({e}), attempting fallback model...")
-                last_error = e
-            else:
-                raise e
+            logger.warning(f"Model {model} failed ({e}), attempting next candidate model...")
+            last_error = e
 
     if last_error:
         raise last_error
